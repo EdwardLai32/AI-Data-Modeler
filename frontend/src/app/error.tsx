@@ -17,7 +17,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Unhandled rendering error in the AutoML Architect dashboard", error);
+    console.error("Unhandled rendering error in the AI Data Modeler dashboard", error);
   }, [error]);
 
   return (

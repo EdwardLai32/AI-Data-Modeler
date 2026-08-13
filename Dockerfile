@@ -1,4 +1,4 @@
-# AutoML Architect — API image.
+# AI Data Modeler — API image.
 #
 # Multi-stage: the build stage owns compilers and pip caches, the runtime stage
 # gets only a populated virtualenv. That matters more than usual here because the
@@ -65,7 +65,7 @@ RUN pip install --no-deps --force-reinstall --no-build-isolation . \
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim-bookworm AS runtime
 
-LABEL org.opencontainers.image.title="AutoML Architect" \
+LABEL org.opencontainers.image.title="AI Data Modeler" \
       org.opencontainers.image.description="Autonomous multi-agent AI data scientist" \
       org.opencontainers.image.licenses="MIT"
 

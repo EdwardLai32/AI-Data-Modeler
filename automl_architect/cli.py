@@ -50,7 +50,7 @@ from .core.schemas import (
 
 app = typer.Typer(
     name="amla",
-    help="AutoML Architect — an autonomous multi-agent AI data scientist.",
+    help="AI Data Modeler — an autonomous multi-agent AI data scientist.",
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
@@ -357,7 +357,7 @@ class RunDisplay:
 
         return Panel(
             Group(*blocks),
-            title="[bold]AutoML Architect[/]",
+            title="[bold]AI Data Modeler[/]",
             border_style="cyan" if status is RunStatus.RUNNING else "dim",
         )
 
@@ -1208,7 +1208,7 @@ def serve(
     bind_host = host or settings.api_host
     bind_port = port or settings.api_port
     console.print(
-        f"[bold cyan]AutoML Architect[/] api on [link]http://{bind_host}:{bind_port}[/] "
+        f"[bold cyan]AI Data Modeler[/] api on [link]http://{bind_host}:{bind_port}[/] "
         f"[dim](docs at /docs, health at /api/health)[/]"
     )
     uvicorn.run(
@@ -1405,7 +1405,7 @@ def main(
         False, "--version", callback=_version_callback, is_eager=True, help="Show the version."
     ),
 ) -> None:
-    """AutoML Architect: profile, plan, model, explain — with every choice recorded."""
+    """AI Data Modeler: profile, plan, model, explain — with every choice recorded."""
 
 
 if __name__ == "__main__":  # pragma: no cover

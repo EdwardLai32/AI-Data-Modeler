@@ -121,7 +121,7 @@ export function BackendDown({
     >
       <p className="flex items-center gap-2 text-sm font-semibold text-ink">
         <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
-        The AutoML Architect API is not responding
+        The AI Data Modeler API is not responding
       </p>
       <p className="mt-2 max-w-prose text-xs leading-relaxed text-ink-2">
         Nothing on this page can load until the backend is up. Start it from the repository

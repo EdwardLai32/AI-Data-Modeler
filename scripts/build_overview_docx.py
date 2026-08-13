@@ -21,7 +21,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 
 SOURCE = Path("RESUME_OVERVIEW.md")
-TARGET = Path("AutoML Architect - Project Overview.docx")
+TARGET = Path("AI Data Modeler - Project Overview.docx")
 
 ACCENT = RGBColor(0x1F, 0x4E, 0x79)
 MUTED = RGBColor(0x59, 0x59, 0x59)
@@ -198,7 +198,7 @@ def main() -> int:
     document = Document()
     style_document(document)
 
-    title = document.add_heading("AutoML Architect", level=0)
+    title = document.add_heading("AI Data Modeler", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.LEFT
     subtitle = document.add_paragraph()
     run = subtitle.add_run(

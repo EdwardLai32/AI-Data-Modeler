@@ -1,4 +1,4 @@
-# AutoML Architect — dashboard
+# AI Data Modeler — dashboard
 
 The web front end for the multi-agent AI data scientist. Next.js (App Router) +
 TypeScript (strict) + Tailwind CSS v4, talking to the FastAPI backend over REST

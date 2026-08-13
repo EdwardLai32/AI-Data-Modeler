@@ -1,4 +1,4 @@
-# AutoML Architect — local stack: API, Postgres, dashboard.
+# AI Data Modeler — local stack: API, Postgres, dashboard.
 #
 #   cp .env.example .env      # set ANTHROPIC_API_KEY
 #   docker compose up --build

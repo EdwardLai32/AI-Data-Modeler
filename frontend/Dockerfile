@@ -1,4 +1,4 @@
-# AutoML Architect — dashboard image.
+# AI Data Modeler — dashboard image.
 #
 # Next.js 16 / React 19. The dashboard is a pure API client, so the only wiring it
 # needs is the API origin. That value is inlined into the client bundle at *build*

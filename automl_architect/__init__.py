@@ -1,4 +1,4 @@
-"""AutoML Architect — an autonomous multi-agent AI data scientist.
+"""AI Data Modeler — an autonomous multi-agent AI data scientist.
 
 The shape of the system in one paragraph: a deterministic orchestrator walks a
 plan that a reasoning agent wrote, invoking specialist agents that *decide* and

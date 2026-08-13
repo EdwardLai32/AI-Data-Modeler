@@ -360,7 +360,7 @@ def render_pdf(
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=report.title,
-        author="AutoML Architect",
+        author="AI Data Modeler",
         subject=f"{state.config.project} — run {state.run_id}",
     )
     width = document.width

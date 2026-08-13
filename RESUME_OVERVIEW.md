@@ -1,4 +1,4 @@
-# AutoML Architect — Project Overview
+# AI Data Modeler — Project Overview
 
 Reference sheet for resumes, portfolios, and interviews.
 All figures below were measured from the repository and from real end-to-end runs.
@@ -110,7 +110,7 @@ prompt caching, adaptive thinking)
 
 ### Short version
 
-> Built an autonomous multi-agent AI data-science platform (58k LOC, 772 tests) that
+> Built an autonomous multi-agent AI data-science platform (58k LOC, 799 tests) that
 > profiles datasets, plans ML pipelines, trains and evaluates models, and generates
 > explained reports. Architected a strict reasoning/computation split — LLM agents make
 > typed, schema-enforced decisions; scikit-learn, XGBoost, Optuna, and SHAP execute them —
@@ -242,7 +242,7 @@ suite passed while the pipeline was failing in ways only a real run exposed.
 ## Honest framing
 
 **Do not claim production deployment or users.** This is a working system with real
-end-to-end runs, a 772-test suite, and measured results. That is already substantial. It has
+end-to-end runs, a 799-test suite, and measured results. That is already substantial. It has
 not served production traffic.
 
 **Be ready to say it was AI-assisted.** That is normal practice and not a weakness. The

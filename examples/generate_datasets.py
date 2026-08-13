@@ -1,4 +1,4 @@
-"""Generate the example datasets shipped with AutoML Architect.
+"""Generate the example datasets shipped with AI Data Modeler.
 
 Every dataset here is synthetic but built to behave like real data, because the
 point of an example dataset in this project is to exercise a specific code path.

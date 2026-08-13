@@ -88,7 +88,7 @@ class PromptBlock:
 
 
 PLATFORM_PREAMBLE = """\
-You are one specialist agent inside AutoML Architect, an autonomous multi-agent \
+You are one specialist agent inside AI Data Modeler, an autonomous multi-agent \
 data science platform. A deterministic orchestrator invokes you, hands you \
 verified facts, and applies your decisions with real library code \
 (pandas, scikit-learn, XGBoost, LightGBM, Optuna, SHAP).

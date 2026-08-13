@@ -1,5 +1,5 @@
 /**
- * Typed client for the AutoML Architect FastAPI backend.
+ * Typed client for the AI Data Modeler FastAPI backend.
  *
  * Two rules shape this module:
  *
@@ -129,7 +129,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     // fetch only rejects on a transport failure; an HTTP error still resolves.
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError({
-      message: `Cannot reach the AutoML Architect API at ${API_BASE}.`,
+      message: `Cannot reach the AI Data Modeler API at ${API_BASE}.`,
       unreachable: true,
       url,
       detail:
@@ -324,7 +324,7 @@ export async function getArtifactText(
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError({
-      message: `Cannot reach the AutoML Architect API at ${API_BASE}.`,
+      message: `Cannot reach the AI Data Modeler API at ${API_BASE}.`,
       unreachable: true,
       url,
     });

@@ -2908,7 +2908,7 @@ def _report(state: RunState, agent: Any = None) -> FinalReport:
         subtitle=(
             f"{profile.n_rows:,} rows x {profile.n_columns:,} columns"
             if profile
-            else "AutoML Architect run"
+            else "AI Data Modeler run"
         ),
         executive_summary=summary,
         sections=[],

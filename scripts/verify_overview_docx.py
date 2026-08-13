@@ -12,11 +12,11 @@ from pathlib import Path
 
 from docx import Document
 
-TARGET = Path("AutoML Architect - Project Overview.docx")
+TARGET = Path("AI Data Modeler - Project Overview.docx")
 
 # Figures and phrases that must survive; each is quoted in the document.
 REQUIRED = [
-    "772",
+    "799",
     "58,200",
     "0.9975",
     "0.791",

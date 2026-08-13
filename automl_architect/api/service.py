@@ -1117,7 +1117,7 @@ def reset_run_manager() -> None:
 # ---------------------------------------------------------------------------
 
 _QA_INSTRUCTIONS = """\
-You are the natural-language interface to a completed AutoML Architect run. A \
+You are the natural-language interface to a completed AI Data Modeler run. A \
 user asks a question; you answer it strictly from the run record supplied below.
 
 Rules:

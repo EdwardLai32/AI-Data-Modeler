@@ -9,7 +9,7 @@ description = "An autonomous multi-agent AI data scientist: profiles data, plans
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "AutoML Architect" }]
+authors = [{ name = "AI Data Modeler" }]
 keywords = ["automl", "agents", "claude", "data-science", "machine-learning", "explainability"]
 classifiers = [
   "Development Status :: 4 - Beta",

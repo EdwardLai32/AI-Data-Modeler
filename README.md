@@ -1,4 +1,4 @@
-# AutoML Architect
+# AI Data Modeler
 
 An autonomous multi-agent data scientist. Point it at a table and it profiles the
 data, decides what problem the table poses, plans a pipeline for *that* dataset,
@@ -121,10 +121,16 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full walkthrough.
 Requires **Python 3.11+**.
 
 ```bash
-git clone <this-repo> && cd automl-architect
+git clone <this-repo> && cd AI-Data-Modeler
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e .
 ```
+
+> **A note on names.** The product is *AI Data Modeler*. The Python package is
+> `automl_architect` and the CLI is `amla`, from an earlier name — those are load-bearing
+> identifiers (imports, entry points, the installed distribution), so they are
+> left alone rather than churned. `import automl_architect` and `amla run` are
+> correct; there is no second package.
 
 Then set a credential. The Anthropic SDK reads `ANTHROPIC_API_KEY`, or
 `ANTHROPIC_AUTH_TOKEN`, or an OAuth profile written by `ant auth login`:

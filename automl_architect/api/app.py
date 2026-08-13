@@ -88,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         reset_run_manager()
 
     app = FastAPI(
-        title="AutoML Architect",
+        title="AI Data Modeler",
         description=DESCRIPTION,
         version=__version__,
         lifespan=lifespan,
@@ -112,7 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def root() -> dict[str, Any]:
         """Point a curious browser at the docs and the health check."""
         return {
-            "name": "AutoML Architect",
+            "name": "AI Data Modeler",
             "version": __version__,
             "docs": "/docs",
             "health": "/api/health",

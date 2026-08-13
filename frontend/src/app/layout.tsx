@@ -6,8 +6,8 @@ import { THEME_BOOTSTRAP_SCRIPT, ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
   title: {
-    default: "AutoML Architect",
-    template: "%s · AutoML Architect",
+    default: "AI Data Modeler",
+    template: "%s · AI Data Modeler",
   },
   description:
     "Live view of an autonomous multi-agent data-science run: every plan step, every agent decision, and the reasoning behind it.",
@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link
               href="/"
               className="group flex min-w-0 items-center gap-2.5 rounded-md py-0.5"
-              aria-label="AutoML Architect home"
+              aria-label="AI Data Modeler home"
             >
               <span
                 aria-hidden="true"
@@ -48,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold tracking-tight text-ink">
-                  AutoML Architect
+                  AI Data Modeler
                 </span>
                 <span className="block truncate text-[11px] text-ink-3">
                   Agents decide · Python computes

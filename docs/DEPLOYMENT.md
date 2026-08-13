@@ -1,6 +1,6 @@
 # Deployment
 
-How to run AutoML Architect somewhere other than a laptop, and what breaks if you
+How to run AI Data Modeler somewhere other than a laptop, and what breaks if you
 skip a step.
 
 Read [Before you expose this](#before-you-expose-this) first. The API has no

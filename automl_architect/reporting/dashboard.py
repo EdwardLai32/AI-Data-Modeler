@@ -320,14 +320,14 @@ def build_dashboard(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_esc(title)} — AutoML Architect dashboard</title>
+<title>{_esc(title)} — AI Data Modeler dashboard</title>
 <style>{_CSS % {"vars": theme.css_variables()}}</style>
 <script type="text/javascript">{offline.get_plotlyjs()}</script>
 </head>
 <body>
 <div class="wrap">
 <header class="hero">
-  <p class="eyebrow">AutoML Architect · run dashboard</p>
+  <p class="eyebrow">AI Data Modeler · run dashboard</p>
   <h1>{_esc(state.config.project)}</h1>
   <p class="sub">Run <code>{_esc(state.run_id)}</code> · {len(rendered)} of
   {len(artifacts)} charts rendered · generated {_esc(generated)}</p>

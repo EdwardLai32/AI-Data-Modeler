@@ -1,4 +1,4 @@
-"""Canonical data contracts for AutoML Architect.
+"""Canonical data contracts for AI Data Modeler.
 
 Every agent, executor, and API surface speaks these types. Two rules govern the
 models here:

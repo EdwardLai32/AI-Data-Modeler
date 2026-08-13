@@ -1,4 +1,4 @@
-# AutoML Architect — development tasks.
+# AI Data Modeler — development tasks.
 #
 # `make help` lists everything. Targets assume an activated virtualenv, or set
 # PY to point at one:
@@ -29,7 +29,7 @@ TARGET   ?= churned
 # -----------------------------------------------------------------------------
 
 help: ## Show this help
-	@echo "AutoML Architect — make targets"
+	@echo "AI Data Modeler — make targets"
 	@echo
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | sort \
