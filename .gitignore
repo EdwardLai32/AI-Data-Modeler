@@ -1,0 +1,108 @@
+# --- secrets -----------------------------------------------------------------
+# Never commit a credential. `.env.example` is the committed template.
+.env
+.env.local
+.env.*.local
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# --- run output --------------------------------------------------------------
+# Artifacts, fitted models, charts, reports, and the SQLite database all live
+# under the workspace. None of it is source.
+workspace/
+workspace_test/
+runs/
+*.db
+*.sqlite
+*.sqlite3
+*.joblib
+*.pkl
+
+# --- python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- virtualenvs -------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# --- tooling caches ---------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.tox/
+.nox/
+.cache
+
+# --- notebooks ---------------------------------------------------------------
+.ipynb_checkpoints/
+
+# --- frontend ----------------------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.vercel
+
+# --- editors and OS ---------------------------------------------------------
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- scratch ----------------------------------------------------------------
+# Probe and smoke scripts used while building; not part of the package.
+probe_*.py
+_smoke*.py
+scratch_*.py
+_selftest_*.py
+scratch/
+tmp/
+*.log
+
+# --- deliberately committed --------------------------------------------------
+# The example CSVs are reproducible from examples/generate_datasets.py, but they
+# are committed so a fresh clone can run the quickstart without a build step.
+!examples/*.csv
+
+# Ad-hoc verification output from scripts/ (see scripts/verify_build.py)
+test_results.txt
+live_run*.log

@@ -1,0 +1,262 @@
+@import "tailwindcss";
+
+/* Tailwind's source scan does not reach `src/app/runs/[runId]/**` — a dynamic
+   route's bracketed directory name reads as a glob character class — and an
+   explicit `@source` glob does not rescue it either. Route files therefore stay
+   class-free shells and every styled element lives under `src/components`,
+   which is scanned. Adding a utility class inside a route folder would silently
+   produce no CSS. */
+
+/* Dark mode is a deliberate, class-driven theme (the toggle must be able to
+   beat the OS setting in both directions), not an automatic inversion of the
+   light palette. Each dark token is its own chosen step. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --plane: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --hairline: rgba(11, 11, 11, 0.1);
+  --hairline-strong: rgba(11, 11, 11, 0.18);
+
+  /* ink */
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-3: #898781;
+
+  /* chart chrome */
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+
+  /* accent = categorical slot 1 (blue), with a lighter step of its own ramp
+     for meter tracks */
+  --accent: #2a78d6;
+  --accent-strong: #1c5cab;
+  --accent-track: #cde2fb;
+  --accent-wash: rgba(42, 120, 214, 0.1);
+
+  /* categorical slots 2 and 3, for the rare two/three-series mark */
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+
+  /* status — fixed, never themed */
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --plane: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232322;
+  --hairline: rgba(255, 255, 255, 0.1);
+  --hairline-strong: rgba(255, 255, 255, 0.2);
+
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-3: #898781;
+
+  --grid: #2c2c2a;
+  --baseline: #383835;
+
+  --accent: #3987e5;
+  --accent-strong: #86b6ef;
+  --accent-track: #184f95;
+  --accent-wash: rgba(57, 135, 229, 0.16);
+
+  --series-2: #d95926;
+  --series-3: #199e70;
+
+  --good: #0ca30c;
+  --good-text: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+
+  --color-plane: var(--plane);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+
+  --color-grid: var(--grid);
+  --color-baseline: var(--baseline);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-track: var(--accent-track);
+  --color-accent-wash: var(--accent-wash);
+
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-critical: var(--critical);
+}
+
+@layer base {
+  html {
+    background-color: var(--plane);
+  }
+
+  body {
+    background-color: var(--plane);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A visible focus ring is the keyboard user's cursor. Never remove it. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--accent-wash);
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-color: var(--baseline) transparent;
+    scrollbar-width: thin;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--baseline);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Long prose from an agent: keep measure readable, break long identifiers. */
+  .prose-agent {
+    max-width: 78ch;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Markdown rendered from FinalReport.body_markdown. Scoped so it cannot leak
+   into the app chrome. */
+.markdown-body {
+  color: var(--ink-2);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.markdown-body > * + * {
+  margin-top: 0.9rem;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.75rem;
+}
+.markdown-body h1 {
+  font-size: 1.5rem;
+}
+.markdown-body h2 {
+  font-size: 1.25rem;
+}
+.markdown-body h3 {
+  font-size: 1.05rem;
+}
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.35rem;
+}
+.markdown-body ul {
+  list-style: disc;
+}
+.markdown-body ol {
+  list-style: decimal;
+}
+.markdown-body li + li {
+  margin-top: 0.3rem;
+}
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.markdown-body pre {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 0.9rem;
+  overflow-x: auto;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-body blockquote {
+  border-left: 2px solid var(--baseline);
+  padding-left: 0.9rem;
+  color: var(--ink-3);
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.markdown-body th,
+.markdown-body td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.markdown-body th {
+  color: var(--ink);
+  font-weight: 600;
+}
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+.markdown-body strong {
+  color: var(--ink);
+  font-weight: 600;
+}

@@ -1,0 +1,28 @@
+# Normalise line endings in the repository to LF, regardless of the checkout
+# platform. Without this, a Windows checkout commits CRLF and every file looks
+# rewritten to a Linux collaborator (and to CI).
+* text=auto eol=lf
+
+# Windows-only files that must keep CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary: never touch, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.pptx binary
+*.xlsx binary
+*.joblib binary
+*.pkl binary
+*.parquet binary
+
+# Generated or vendored files: keep them out of diffs and language stats.
+frontend/package-lock.json  -diff linguist-generated
+examples/*.csv              -diff linguist-generated
+.claude/workflows/*.js      linguist-generated

@@ -1,0 +1,123 @@
+# AutoML Architect — local stack: API, Postgres, dashboard.
+#
+#   cp .env.example .env      # set ANTHROPIC_API_KEY
+#   docker compose up --build
+#
+#   dashboard  http://localhost:3000
+#   api docs   http://localhost:8000/docs
+#   health     http://localhost:8000/api/health
+#
+# Two things are worth knowing before you scale this.
+#
+# The API and any additional replica must share BOTH the database and the
+# workspace volume. Runs write artifacts (charts, models, reports) to the
+# workspace and serve them back over /api/runs/{id}/artifacts, so a replica
+# without the shared volume returns 404 for work another replica did.
+#
+# There is no authentication in front of the API. On anything reachable from
+# outside your machine, put a gateway in front of it — anyone who can call it can
+# start runs that cost money.
+
+name: automl-architect
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-automl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-automl}
+      POSTGRES_DB: ${POSTGRES_DB:-automl}
+      # C collation makes index behaviour deterministic across host locales.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Exposed for psql and migrations. Drop this line in a shared deployment.
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      # The API's own startup ping tolerates an unreachable database, so without
+      # this gate the first run would fail on a cold stack rather than wait.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-automl} -d ${POSTGRES_DB:-automl}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXTRAS: ${API_EXTRAS:-.[api,boost,tuning,explain,charts,reports,sql]}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # --- credentials: taken from the host environment or .env, never baked in
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+
+      # --- model
+      AUTOML_MODEL: ${AUTOML_MODEL:-claude-opus-5}
+      AUTOML_DEFAULT_EFFORT: ${AUTOML_DEFAULT_EFFORT:-high}
+      AUTOML_ENABLE_PROMPT_CACHING: "true"
+      AUTOML_ENABLE_THINKING: "true"
+
+      # --- storage
+      AUTOML_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-automl}:${POSTGRES_PASSWORD:-automl}@postgres:5432/${POSTGRES_DB:-automl}
+      AUTOML_WORKSPACE: /var/lib/automl
+
+      # --- api
+      AUTOML_API_HOST: 0.0.0.0
+      AUTOML_API_PORT: "8000"
+      # Must include every origin the dashboard is served from, or the browser
+      # blocks the fetch before it reaches the API.
+      AUTOML_CORS_ORIGINS: ${AUTOML_CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
+
+      # --- execution
+      AUTOML_LOG_LEVEL: ${AUTOML_LOG_LEVEL:-INFO}
+      AUTOML_N_JOBS: ${AUTOML_N_JOBS:-4}
+      AUTOML_MAX_PROFILE_ROWS: ${AUTOML_MAX_PROFILE_ROWS:-250000}
+    volumes:
+      - workspace:/var/lib/automl
+      # Read-only mount so `uri: /data/yours.csv` works without copying files in.
+      - ./examples:/data:ro
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 25s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          # Training is CPU-bound and SHAP is memory-hungry on wide frames. Keep
+          # AUTOML_N_JOBS at or below the CPU limit.
+          cpus: "${API_CPUS:-4}"
+          memory: ${API_MEMORY:-6g}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Inlined into the client bundle at build time. This is the origin the
+        # *browser* resolves, so it cannot be the compose service name.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:
+  workspace:
