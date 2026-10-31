@@ -494,6 +494,9 @@ class ExperimentAgent(HybridAgent[ExperimentLog]):
         try:
             log = run_experiments(state)
         except Exception as exc:  # noqa: BLE001 - one bad run must not kill the run
+            from ..core.errors import BudgetExceeded, RunCancelled
+            if isinstance(exc, (BudgetExceeded, RunCancelled)):
+                raise
             logger.exception("run_experiments failed")
             state.add_warning(
                 f"{self.title}: training failed ({type(exc).__name__}: {exc}); "

@@ -110,6 +110,9 @@ def run_tuning(state: RunState, decision: TuningDecision) -> TuningResult:
         tuning was declined or impossible; ``error`` set when the search itself
         failed. Never raises: a failed search leaves the untuned winner in place.
     """
+    if state.settings.isolate_training and state.extras.get("enforce_runtime") and not state.extras.get("computation_worker"):
+        from .runtime import run_computation
+        return run_computation(state, "tune", decision)
     result = TuningResult(method=decision.method, family=decision.target_family)
     state.tuning = result
 

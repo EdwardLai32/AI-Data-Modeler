@@ -56,6 +56,45 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+
+@app.command("evaluate")
+def evaluate_command(
+    provider: str = typer.Option("offline", help="offline, anthropic, or openai"),
+    model: str | None = typer.Option(None, help="Provider model ID"),
+    live: bool = typer.Option(False, help="Explicitly allow paid provider calls"),
+    rows: int = typer.Option(300, min=30),
+    repetitions: int = typer.Option(1, min=1, max=10),
+    max_cost: float | None = typer.Option(None, help="Estimated USD cap per run; requires configured prices"),
+    output: Path | None = typer.Option(None, help="JSON comparison report destination"),
+) -> None:
+    """Evaluate the same synthetic datasets with offline rules, Claude or GPT."""
+    from .evaluations import evaluate
+    try:
+        path, report = evaluate(provider=provider, model=model, live=live, rows=rows,
+                                repetitions=repetitions, max_cost_usd=max_cost, output=output)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"{report['completed']}/{report['total']} completed. Report: {path}")
+    if report["completed"] != report["total"]:
+        raise typer.Exit(1)
+
+
+@app.command("recover")
+def recover_command(run_id: str) -> None:
+    """Resume an interrupted run from its authenticated local checkpoint."""
+    from .api.service import get_run_manager
+    manager = get_run_manager()
+    try:
+        handle = manager.recover(run_id)
+        while handle.is_running and handle.status is not RunStatus.AWAITING_APPROVAL:
+            manager.wait(run_id, timeout=0.2)
+        summary = handle.current_summary()
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(summary.model_dump_json(indent=2) if summary else "No summary available")
+    if summary and summary.status not in {RunStatus.COMPLETED, RunStatus.AWAITING_APPROVAL}:
+        raise typer.Exit(1)
+
 console = Console()
 error_console = Console(stderr=True)
 
@@ -1195,8 +1234,13 @@ def serve(
     port: int | None = typer.Option(None, "--port", help="Bind port."),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes."),
     log_level: str | None = typer.Option(None, "--log-level"),
+    offline: bool = typer.Option(
+        False, "--offline", help="Serve with rule-based decisions and no model calls."
+    ),
 ) -> None:
     """Serve the HTTP API and the event stream."""
+    if offline:
+        _enable_offline()
     try:
         import uvicorn
     except ImportError:
@@ -1228,8 +1272,13 @@ def serve(
 @app.command()
 def doctor(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show every check."),
+    offline: bool = typer.Option(
+        False, "--offline", help="Check readiness for a run without model calls."
+    ),
 ) -> None:
     """Diagnose the install: interpreter, credentials, storage, optional features."""
+    if offline:
+        _enable_offline()
     from .api.service import detect_features, module_available
 
     settings = _settings()
@@ -1266,8 +1315,8 @@ def doctor(
         if settings.offline
         else "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN found"
         if credentials
-        else "no API key in the environment. Set ANTHROPIC_API_KEY, sign in with "
-        "'ant auth login' if you use an OAuth profile, or run with --offline to "
+        else "no credential in the environment or dotenv files. Set ANTHROPIC_API_KEY "
+        "in .env, or run with --offline to "
         "use the deterministic rule engine instead",
         fatal=True,
     )

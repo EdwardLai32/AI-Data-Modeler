@@ -1,7 +1,14 @@
 # AI Data Modeler — Project Overview
 
 Reference sheet for resumes, portfolios, and interviews.
-All figures below were measured from the repository and from real end-to-end runs.
+The tables and demo measurements below describe an earlier repository snapshot.
+They are historical, not current test totals or benchmark claims. For the current
+provider, checkpoint, validation, and budget implementation, see [the harness
+reference](docs/HARNESS.md). Regenerate measurements before using numeric claims.
+
+Current resume wording: “Built a supervised AutoML agent harness with interchangeable
+Claude/OpenAI reasoning, validated tool decisions, recoverable checkpoints,
+execution budgets, fold-local preprocessing, and repeatable evaluations in CI.”
 
 ---
 

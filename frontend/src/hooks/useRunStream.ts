@@ -23,7 +23,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { asApiError, getEvents, streamUrl } from "@/lib/api";
+import { asApiError, getEvents, getRun, streamUrl } from "@/lib/api";
 import { EVENT_KINDS, TERMINAL_EVENT_KINDS } from "@/types/api";
 import type { RunEvent } from "@/types/api";
 
@@ -136,7 +136,7 @@ export function useRunStream(
       }
     };
 
-    const ingest = (incoming: RunEvent[]) => {
+    const ingest = (incoming: RunEvent[], checkTerminal = true) => {
       if (cancelled || !incoming.length) return;
       const fresh = incoming
         .filter((event) => !seen.has(event.sequence))
@@ -146,7 +146,8 @@ export function useRunStream(
       for (const event of fresh) {
         seen.add(event.sequence);
         if (event.sequence > cursor) cursor = event.sequence;
-        if (TERMINAL_EVENT_KINDS.has(event.kind)) terminal = true;
+        if (checkTerminal && TERMINAL_EVENT_KINDS.has(event.kind)) terminal = true;
+        if (event.kind === "run_started") terminal = false;
       }
 
       setEvents((previous) => {
@@ -169,7 +170,18 @@ export function useRunStream(
     const closeGap = async (): Promise<boolean> => {
       try {
         const missed = await getEvents(runId, cursor);
-        ingest(missed);
+        // A recovered run retains its old failure/cancellation events. Its
+        // current status, read after the backfill, decides whether to stop.
+        const summary = await getRun(runId);
+        ingest(missed, false);
+        if (["completed", "failed", "cancelled"].includes(summary.status)) {
+          terminal = true;
+          clearTimer();
+          closeSource();
+          setFinished(true);
+          setState("closed");
+          setTransport("none");
+        }
         return true;
       } catch (raw) {
         if (cancelled) return false;
@@ -229,7 +241,7 @@ export function useRunStream(
 
       let stream: EventSource;
       try {
-        stream = new EventSource(streamUrl(runId, cursor));
+        stream = new EventSource(streamUrl(runId, cursor), {withCredentials: true});
       } catch {
         setError(`Cannot open the event stream for ${runId}.`);
         scheduleRetry();

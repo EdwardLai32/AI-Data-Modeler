@@ -35,9 +35,34 @@ Accepted** immediately with a run id and three follow URLs. Execution happens on
 background thread managed by `api/service.py::RunManager`. You then either poll
 `GET /api/runs/{run_id}` or subscribe to the event stream.
 
-There is no authentication layer. This is a deliberate omission, not an oversight:
-the API is designed to sit behind whatever your deployment already uses. See
-[Notes for deployment](#notes-for-deployment).
+Without `AUTOML_API_TOKEN`, access is limited to loopback clients and hosts.
+When configured, provide `Authorization: Bearer TOKEN`, or sign in through
+`POST /api/session` with `{"token":"TOKEN"}` to receive a one-hour HttpOnly
+cookie. Browser mutation origins must match the configured CORS origins. This
+is a trusted-owner application, without per-user data isolation.
+
+## Provider connections and recovery
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/providers` | Provider adapters, server defaults, and curated model options (`id`, `label`); no keys. Includes custom configured defaults. |
+| `POST /api/connections` | Test and create a memory-only connection |
+| `DELETE /api/connections/{connection_id}` | Revoke it for future requests |
+| `POST /api/runs/{run_id}/recover` | Resume an authenticated, compatible checkpoint |
+
+Connection JSON contains `provider` (`anthropic` or `openai`), `model`, and
+`api_key`. `test` defaults to true and makes a small billed call. Optional
+`input_price_per_million` and `output_price_per_million` support dollar estimates.
+The response returns `connection_id`, provider/model, test status, and a one-hour
+expiry. The ID goes on subsequent start, Q&A, and recovery requests. Reconnect
+after a browser reload or server restart; credentials are never part of a saved run.
+
+Run requests additionally accept `provider`, `model`, `max_llm_calls` (40),
+`max_llm_tokens` (500000), and `max_cost_usd` (unset). Retries consume those limits.
+Recovery accepts `{"connection_id":"..."}`, or `{}` for server credentials.
+Completed runs and missing checkpoints cannot be recovered. Recovery retains
+elapsed budgets and approvals, skips completed stages, and replays event cursors.
+See [the harness reference](HARNESS.md) for its boundaries.
 
 ---
 
@@ -128,8 +153,15 @@ Project namespaces that have at least one stored run.
 
 ### `POST /api/upload`
 
-`multipart/form-data` with a `file` field. Stores the dataset under the workspace
-and returns the path plus a ready-made `DataSource`.
+Accepts `multipart/form-data` with one `file` field, or a raw binary body with
+`?filename=...`. Stores the dataset under the workspace and returns the path
+plus a ready-made `DataSource`.
+
+`AUTOML_MAX_UPLOAD_BYTES` defaults to 268435456 (256 MiB). Oversized datasets
+return 413; empty files return 422. Raw requests are limited while streaming.
+Native multipart files are checked after spooling and before a bounded read
+into memory. The fallback parser limits the entire form including overhead.
+The same multipart checks apply to file submissions to `POST /api/runs`.
 
 ```json
 {
@@ -442,16 +474,18 @@ with httpx.Client(base_url=API, timeout=30.0) as client:
 
 ## Notes for deployment
 
-**No authentication is built in.** Put the API behind your existing gateway,
-reverse proxy, or service mesh. Anything that can call it can start runs that cost
-money and read datasets from paths the process can see.
+**Configure authentication for remote access.** Set `AUTOML_API_TOKEN` and use
+HTTPS plus exact CORS origins. The owner token grants access to all runs and local
+source paths. It does not provide tenant isolation. Remote source URIs are disabled
+unless `AUTOML_ALLOW_REMOTE_SOURCES=true`.
 
 **`uri` reads from the server's filesystem.** In a multi-tenant deployment,
 restrict clients to `POST /api/upload` and `upload_path` rather than accepting
 arbitrary `uri` values, or an untrusted caller can read any file the process can.
 
-**Runs are threads in one process.** `RunManager` bounds concurrency; a run
-already active for an id gives 409. Horizontal scaling needs a shared
+**Runs are threads in one process.** There is currently no cap on simultaneous
+run threads; a run already active for an id gives 409. Use one API worker for
+local operation and control admission before shared deployment. Scaling needs a shared
 `AUTOML_DATABASE_URL` (Postgres) *and* a shared workspace volume, because
 artifacts are written to disk and served from there. Without the shared volume,
 `/artifacts` will 404 on whichever replica did not run the job.
@@ -461,5 +495,5 @@ idle timeouts above your longest run, and make sure `Last-Event-ID` survives the
 proxy or reconnects replay from zero.
 
 **Cost.** Each run makes 13+ frontier-model calls at high reasoning effort. Rate
-limits belong at the gateway; `summary.usage` records exactly what each run cost so
-you can set them from data rather than guesswork.
+limits belong at the gateway. `summary.usage` records token usage and a dollar
+estimate calculated from constants, which may differ from provider billing.

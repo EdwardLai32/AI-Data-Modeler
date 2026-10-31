@@ -336,6 +336,10 @@ class RunState:
             replans=self.replans,
             warnings=self.warnings,
             artifact_dir=str(self.artifact_dir),
+            provider="offline" if self.settings.offline else self.settings.provider,
+            model="rules" if self.settings.offline else self.settings.model,
+            checkpoint=self.extras.get("checkpoint"),
+            final_test_metrics=self.extras.get("final_test_metrics", []),
         )
 
     def save_summary(self) -> Path:

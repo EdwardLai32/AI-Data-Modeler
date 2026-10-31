@@ -191,6 +191,12 @@ class StartRunRequest(ApiModel):
     )
     fairness_attributes: list[str] = Field(default_factory=list)
     notes: str = ""
+    provider: Literal["anthropic", "openai"] | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=128)
+    connection_id: str | None = Field(default=None, exclude=True, repr=False)
+    max_llm_calls: int = Field(default=40, ge=1, le=500)
+    max_llm_tokens: int = Field(default=500_000, ge=1)
+    max_cost_usd: float | None = Field(default=None, gt=0)
 
     def resolve_source(self) -> DataSource:
         """Turn whichever source field was supplied into a :class:`DataSource`.
@@ -231,6 +237,11 @@ class StartRunRequest(ApiModel):
             report_formats=self.report_formats,
             fairness_attributes=self.fairness_attributes,
             notes=self.notes,
+            provider=self.provider,
+            model=self.model,
+            max_llm_calls=self.max_llm_calls,
+            max_llm_tokens=self.max_llm_tokens,
+            max_cost_usd=self.max_cost_usd,
         )
 
 
@@ -343,6 +354,7 @@ class ApprovalDecisionResponse(ApiModel):
 
 class AskRequest(ApiModel):
     """Body for ``POST /api/runs/{run_id}/ask``."""
+    connection_id: str | None = Field(default=None, exclude=True, repr=False)
 
     question: str = Field(min_length=3, max_length=2000)
 

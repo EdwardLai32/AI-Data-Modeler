@@ -750,9 +750,6 @@ class TestSchemaCompilationRetry:
             return result
 
         monkeypatch.setattr(llm_module.time, "sleep", lambda _s: None)
-        client = llm_module.LLMClient.__new__(llm_module.LLMClient)
-        client.settings = llm_module.get_settings()
-        client.usage = llm_module.Usage()
 
         class _Messages:
             parse = staticmethod(fake_parse)
@@ -763,7 +760,7 @@ class TestSchemaCompilationRetry:
         class _Transport:
             beta = _Beta()
 
-        client._client = _Transport()  # type: ignore[attr-defined]
+        client = llm_module.LLMClient(llm_module.get_settings(), client=_Transport())
         return client, calls
 
     @staticmethod

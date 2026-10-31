@@ -8,6 +8,7 @@ import { Checkbox, Field, Select, TextArea, TextInput } from "@/components/ui/Fi
 import { Chip } from "@/components/ui/Badge";
 import { ApiFailure } from "@/components/ui/States";
 import { Panel } from "@/components/ui/Panel";
+import { AIConnectionPanel } from "@/components/dashboard/AIConnectionPanel";
 import {
   ApiError,
   asApiError,
@@ -165,6 +166,16 @@ export function NewAnalysisPanel({ onStarted }: { onStarted?: () => void }) {
         }}
         className="space-y-4"
       >
+        <AIConnectionPanel onChange={connection => setOptions(previous => ({...previous,
+          provider: connection?.provider, model: connection?.model, connection_id: connection?.connection_id}))} />
+        <details className="rounded-xl border border-hairline p-3">
+          <summary className="cursor-pointer text-sm text-ink-2">AI usage limits</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Field label="Maximum AI requests" htmlFor={field("calls")}><TextInput id={field("calls")} type="number" min="1" max="500" value={options.max_llm_calls} onChange={e => patch("max_llm_calls", Number(e.target.value))} /></Field>
+            <Field label="Maximum AI tokens" htmlFor={field("tokens")}><TextInput id={field("tokens")} type="number" min="1" value={options.max_llm_tokens} onChange={e => patch("max_llm_tokens", Number(e.target.value))} /></Field>
+            <Field label="Estimated USD limit" htmlFor={field("cost")} hint="Optional; configure model prices in your AI connection."><TextInput id={field("cost")} type="number" min="0.01" step="0.01" value={options.max_cost_usd ?? ""} onChange={e => patch("max_cost_usd", e.target.value ? Number(e.target.value) : null)} /></Field>
+          </div>
+        </details>
         {/* ---- source ---------------------------------------------------- */}
         <div
           onDragOver={(event) => {
@@ -268,7 +279,7 @@ export function NewAnalysisPanel({ onStarted }: { onStarted?: () => void }) {
           <Field
             label="Time budget (seconds)"
             htmlFor={field("budget")}
-            hint="Soft cap the orchestrator plans against."
+            hint="Stops training at the limit and prevents new stages."
           >
             <TextInput
               id={field("budget")}

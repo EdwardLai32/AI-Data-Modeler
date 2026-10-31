@@ -14,7 +14,10 @@ service-account*.json
 # under the workspace. None of it is source.
 workspace/
 workspace_test/
-runs/
+workspace_ci/
+artifacts/
+.checkpoint-key
+/runs/
 *.db
 *.sqlite
 *.sqlite3

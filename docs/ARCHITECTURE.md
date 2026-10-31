@@ -323,6 +323,15 @@ you will eventually forget to apply.
 
 ## Leakage discipline
 
+**Current implementation boundary.** The default graph cleans and engineers
+features before drawing the final split. Cleaning can compute statistics from
+the full working frame, and target encoding uses the available frame when no
+training partition exists yet. The protections below cover specific paths;
+they are not a guarantee that every operation is isolated from held-out data.
+Moving all learned transformations into a train-fitted pipeline, and evaluating
+selection on an untouched external test set, remain follow-up work. See the
+[project walkthrough](../PROJECT_WALKTHROUGH.md#10-current-limitations-and-next-improvements).
+
 Leakage is handled at three separate points, because it arrives three different
 ways.
 
@@ -334,24 +343,25 @@ Cleaning Agent decides what to do with them. The detector reports; it does not
 drop. Whether a column is *legitimately* available at prediction time is a
 business question.
 
-**2. In the transform (`execution/feature_ops.py`).** Anything fitted from the
-feature distribution — scaling, binning, power transforms, PCA/SVD, univariate
-selection, variance thresholds, and one-hot category sets — is **deferred** into an
-unfitted sklearn pipeline on `state.preprocessor`, which the trainer clones and
-fits on the training partition only. Fitting a `StandardScaler` on the full column
-before splitting leaks the test set's mean into the transform; the effect is small
-but it is real, and it is free to avoid.
+**2. In the transform (`execution/preparation.py`).** Raw partitions are sealed
+after initial problem discovery. `PlanPreprocessor` clones and fits cleaning
+statistics, encodings, and sklearn feature transforms on each training/CV fold.
+Prediction replays frozen mappings. Target encoding uses out-of-fold training
+values; temporal/grouped problems exclude it. The exported pipeline includes all
+fitted preparation. Model selection and replanning cannot see final test scores;
+the chosen model is scored once after that loop finishes.
 
-Target encoding is stronger still: K-fold out-of-fold with smoothing toward the
-prior, and fitted on the training partition alone when one already exists. Target
-encoding fitted on the full column writes the answer into the feature, and is
-probably the most common cause of a validation score that collapses in production.
+Initial discovery still sees full-table summaries. Validation-driven planning can
+overfit validation data; these controls do not establish fully blind evaluation.
 
-**3. In time (`execution/splitter.py`, `feature_ops`).** Lags, rolling windows,
-diffs, and expanding statistics sort by the temporal column and are bounded by the
-group key. Without both, a "lag" is an arbitrary neighbouring row and one entity's
-history bleeds into the next entity's. Temporal splits never straddle time, and
-grouped splits never put one entity on both sides.
+**3. In time (`execution/splitter.py`).** Temporal/grouped splitting remains
+explicit. History-dependent feature operations exist as executors, but the
+exportable harness excludes lag, rolling, difference, and expanding features
+until inference has a history contract. It also replaces sequential fills with
+training-fitted imputation and excludes row-removing estimator operations.
+
+See [HARNESS.md](HARNESS.md) for provider adapters, budget reservations, spawned
+computation, authenticated checkpoints, recovery, and evaluation commands.
 
 `examples/churn.csv` ships a deliberate leak — `cancellation_tickets`, AUC 0.9975
 against the target versus 0.627 for the best legitimate feature — so the detector

@@ -10,10 +10,14 @@ so importing this module for its factory does not open a database.
 from __future__ import annotations
 
 import logging
+import hashlib
+import hmac
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -93,6 +97,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+    from .connections import ConnectionStore, router as connection_router
+    app.state.settings = resolved
+    app.state.connections = ConnectionStore(resolved)
+
+    def session_signature(stamp: str) -> str:
+        key = resolved.api_token.get_secret_value() if resolved.api_token else ""
+        return hmac.new(key.encode(), stamp.encode(), hashlib.sha256).hexdigest()
+
+    @app.middleware("http")
+    async def access_control(request: Request, call_next):
+        origin = request.headers.get("origin")
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin not in resolved.cors_origins:
+            return JSONResponse(status_code=403, content={"detail": "Origin is not allowed."})
+        if request.method == "OPTIONS" or request.url.path == "/api/session":
+            return await call_next(request)
+        if resolved.api_token:
+            provided = request.headers.get("authorization", "").removeprefix("Bearer ")
+            authorized = hmac.compare_digest(provided, resolved.api_token.get_secret_value())
+            cookie = request.cookies.get("amla_session", "")
+            stamp, _, signature = cookie.partition(".")
+            if stamp.isdigit() and 0 <= time.time() - int(stamp) < 3600:
+                authorized = authorized or hmac.compare_digest(signature, session_signature(stamp))
+            if not authorized:
+                return JSONResponse(status_code=401, content={"detail": "Server access token required."})
+        else:
+            loopback = {"127.0.0.1", "::1", "localhost", "testclient", "testserver"}
+            if (request.client and request.client.host not in loopback) or request.url.hostname not in loopback:
+                return JSONResponse(status_code=403, content={"detail": "Configure AUTOML_API_TOKEN before remote access."})
+        return await call_next(request)
+
+    @app.post("/api/session", tags=["system"])
+    async def session(request: Request):
+        data = await request.json()
+        supplied = data.get("token", "") if isinstance(data, dict) else ""
+        if not isinstance(supplied, str) or not resolved.api_token or not hmac.compare_digest(supplied, resolved.api_token.get_secret_value()):
+            return JSONResponse(status_code=401, content={"detail": "Invalid server access token."})
+        stamp = str(int(time.time()))
+        response = JSONResponse({"authenticated": True})
+        response.set_cookie("amla_session", stamp + "." + session_signature(stamp), max_age=3600,
+                            httponly=True, secure=request.url.scheme == "https", samesite="lax")
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, exc):
+        return JSONResponse(status_code=422, content={"detail": [
+            {"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]})
 
     app.add_middleware(
         CORSMiddleware,
@@ -106,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(router)
+    app.include_router(connection_router)
     _register_error_handlers(app)
 
     @app.get("/", include_in_schema=False)

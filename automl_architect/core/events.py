@@ -41,6 +41,16 @@ class EventBus:
         self._sequence = 0
         self._max_history = max_history
 
+    def advance_sequence(self, sequence: int) -> None:
+        """Continue monotonic event IDs after durable recovery."""
+        with self._lock:
+            self._sequence = max(self._sequence, sequence)
+
+    @property
+    def last_sequence(self) -> int:
+        with self._lock:
+            return self._sequence
+
     # -- subscription -----------------------------------------------------
 
     def subscribe(self, callback: Subscriber) -> Callable[[], None]:

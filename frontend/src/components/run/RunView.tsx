@@ -20,6 +20,7 @@ import { PlanPanel } from "@/components/run/PlanPanel";
 import { ProblemPanel } from "@/components/run/ProblemPanel";
 import { ProfilePanel } from "@/components/run/ProfilePanel";
 import { RunHeader } from "@/components/run/RunHeader";
+import { AIConnectionPanel } from "@/components/dashboard/AIConnectionPanel";
 import { TuningPanel } from "@/components/run/TuningPanel";
 import { UnderstandingPanel } from "@/components/run/UnderstandingPanel";
 import { UsageMeter } from "@/components/run/UsageMeter";
@@ -171,6 +172,7 @@ export function RunView() {
   return (
     <div className="space-y-5">
       <RunHeader summary={summary} refreshing={refreshing} onRefresh={refreshNow} />
+      <AIConnectionPanel />
 
       {error ? (
         <ApiFailure error={error} context="Refreshing the run" onRetry={refreshNow} />
