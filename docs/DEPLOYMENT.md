@@ -3,9 +3,9 @@
 How to run AI Data Modeler somewhere other than a laptop, and what breaks if you
 skip a step.
 
-Read [Before you expose this](#before-you-expose-this) first. The API has no
-authentication by design, and the default `uri` handling reads files from the
-server's filesystem.
+Read [Before you expose this](#before-you-expose-this) first. The API is a
+trusted-owner application. It requires an owner token for remote access, and
+local source paths can read files visible to the server process.
 
 ## Contents
 
@@ -31,11 +31,12 @@ server's filesystem.
 
 Four properties of the system that matter more than anything else on this page.
 
-**1. There is no authentication.** Not a missing feature to be added later — a
-deliberate omission, because every organisation already has an answer. Anything
-that can reach `POST /api/runs` can start runs that cost real money at a frontier
-model's list price. Put an authenticating gateway, reverse proxy, or service mesh
-in front of it before it is reachable from anywhere you do not control.
+**1. Configure owner authentication.** Set `AUTOML_API_TOKEN` before exposing the
+API. Without it, only loopback clients/hosts are accepted. With it, clients use a
+Bearer header or a one-hour HttpOnly session from `POST /api/session`. Use HTTPS,
+exact CORS origins, and the same site for frontend/API session cookies (for local
+development, use `localhost` for both). This token grants access to every run;
+multi-user identity, quotas, and tenant isolation are not implemented.
 
 **2. `uri` reads the server's filesystem.** `{"uri": "/etc/passwd"}` is a valid
 run request and the profiler will happily describe the file. In any deployment
@@ -61,7 +62,7 @@ with whatever policy the source data carries.
 | **Laptop / CLI** | SQLite under `./workspace` | Exploration, one-off analyses | `pip install -e .` and go. No server needed |
 | **Single container** | SQLite on a volume | A shared instance for a small team | Simplest thing that keeps run history |
 | **Compose stack** | Postgres + volume | The intended default | API + Postgres + dashboard, one command |
-| **Kubernetes** | Postgres + RWX volume | Multi-tenant, multi-replica | Needs a **shared** workspace volume, see [Scaling](#scaling) |
+| **Kubernetes** | Postgres + persistent volume | Operator-managed deployment | Use one API worker; distributed ownership and tenant isolation are not implemented |
 | **Batch / cron** | Postgres | Scheduled retraining reviews | Skip the API; call `analyse()` from a job |
 
 ---
@@ -150,9 +151,10 @@ unable to complete a run — which is exactly the state a healthcheck should cat
 
 ## Configuration reference
 
-Settings are read from the environment with an `AUTOML_` prefix, then `.env`, then
-`.env.local`. `.env.example` documents every field; the ones that matter for a
-deployment:
+Settings precedence is explicit constructor arguments, process environment,
+`.env.local`, `.env`, then defaults. Most environment names have the `AUTOML_`
+prefix; Anthropic SDK settings keep their `ANTHROPIC_` names and are passed
+explicitly from settings to the client. Relevant deployment settings:
 
 | Variable | Deployment guidance |
 |---|---|
@@ -164,6 +166,7 @@ deployment:
 | `AUTOML_N_JOBS` | Set to the CPU limit. `-1` in a limited container oversubscribes and runs *slower* |
 | `AUTOML_MAX_PROFILE_ROWS` | Lower it if profiling wide tables is the bottleneck. The true row count is still reported |
 | `AUTOML_MAX_TRAIN_ROWS` | Caps training memory. Above this, training subsamples |
+| `AUTOML_MAX_UPLOAD_BYTES` | Dataset upload cap in bytes; defaults to 256 MiB. Configure proxy request limits as well |
 | `AUTOML_DEFAULT_EFFORT` | The main cost/quality dial. `high` is the default; `medium` cuts cost noticeably |
 | `AUTOML_MAX_OUTPUT_TOKENS` | Covers thinking *plus* output on Opus 5. Lowering it too far truncates deep reasoning |
 | `AUTOML_ENABLE_PROMPT_CACHING` | Leave on. With 13 agents per run this is most of the prompt cost |
@@ -259,8 +262,11 @@ Checklist, because each of these has its own failure signature:
 
 ## Scaling
 
-Runs execute as threads inside the API process. `RunManager` bounds concurrency and
-returns 409 for a run id already active.
+Runs execute as threads inside the API process. `RunManager` returns 409 for a
+run id already active, but does not cap the number of simultaneous run threads.
+Retention limits apply to finished handles, not active jobs. Use a single API
+worker for local operation; add admission control and durable job management
+before relying on this for shared workloads.
 
 **Vertical first.** Runs are CPU-bound in scikit-learn and memory-bound in SHAP.
 More cores and more RAM on one instance is simpler and usually cheaper than
@@ -345,6 +351,16 @@ Metrics worth alerting on:
 ---
 
 ## Cost control
+
+Per-run `max_llm_calls`, `max_llm_tokens`, and optional `max_cost_usd` apply before
+provider requests, including retries. A dollar cap requires configured input and
+output prices; estimates are not provider billing guarantees. Connection tests
+and Q&A are separate calls. Training/tuning workers can be terminated on deadline;
+other stages check time between steps. See [HARNESS.md](HARNESS.md).
+
+Keep the workspace and its `.checkpoint-key` together when backing up. Recovery
+is explicit and checks source/dependency compatibility before deserializing signed
+state. Changing code or scientific-library versions can invalidate old checkpoints.
 
 A run makes 13+ calls to a frontier model at high reasoning effort. Levers, in
 descending order of effect:
