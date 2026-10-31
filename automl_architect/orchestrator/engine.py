@@ -483,9 +483,18 @@ class Orchestrator:
         bus: EventBus | None = None,
     ) -> None:
         self._settings = settings or get_settings()
+        provider = config.provider or self._settings.provider
+        model = config.model or self._settings.model_for_provider(provider)
+        self._settings = self._settings.model_copy(update={"provider": provider, "model": model})
+        config = config.model_copy(update={"provider": provider, "model": model})
         self._repository = repository
-        self._bus = bus or EventBus(config.run_id)
+        self._bus = bus if bus is not None else EventBus(config.run_id)
         self._state = RunState(config=config, settings=self._settings, bus=self._bus)
+        from ..core.llm import get_llm_client
+        self._llm = get_llm_client(self._settings)
+        if hasattr(self._llm, "bind_run"):
+            self._llm.bind_run(self._state)
+        self._state.extras["enforce_runtime"] = True
 
         self.cancel_event = threading.Event()
 
@@ -540,7 +549,28 @@ class Orchestrator:
     def cancel(self) -> None:
         """Ask the run to stop at the next step boundary."""
         self.cancel_event.set()
+        self._state.extras["cancel_requested"] = True
         self._bus.log("cancellation requested")
+
+    def restore(self) -> None:
+        from ..storage.checkpoints import load_checkpoint
+        self._state = load_checkpoint(self._settings, self._state.run_id, self._bus)
+        if hasattr(self._llm, "bind_run"):
+            self._llm.bind_run(self._state)
+        self._state.extras.pop("cancel_requested", None)
+        controller = self._state.extras.get("harness_controller", {})
+        self._loop_locked = controller.get("loop_locked", False)
+        self._pending_comparison = controller.get("pending_comparison")
+        self._bus.emit(EventKind.RUN_STARTED,
+                       "Recovered authenticated checkpoint; completed stages will not be repeated.",
+                       payload={"recovered": True})
+
+    def _checkpoint(self) -> None:
+        if self._settings.enable_checkpoints:
+            from ..storage.checkpoints import save_checkpoint
+            self._state.extras["harness_controller"] = {
+                "loop_locked": self._loop_locked, "pending_comparison": self._pending_comparison}
+            save_checkpoint(self._state)
 
     def run(self) -> RunSummary:
         """Execute the pipeline.
@@ -640,6 +670,9 @@ class Orchestrator:
         self._freeze_context()
         self._run_step(require_step("understand"))
         self._run_step(require_step("identify_problem"))
+        from ..execution.preparation import prepare_run_partitions
+        prepare_run_partitions(self._state)
+        self._freeze_context()
         self._consult_memory()
         self._run_step(require_step("plan"))
 
@@ -667,10 +700,27 @@ class Orchestrator:
             self._replan(decision)
             reconciliation = self._reconcile()
 
+        from ..execution.preparation import record_fitted_preparation, score_final_holdout
+        record_fitted_preparation(self._state)
+        score_final_holdout(self._state)
+        if self._state.best_pipeline is not None:
+            from ..storage.artifacts import save_model
+            artifact = save_model(self._state.best_pipeline, self._state.run_id,
+                settings=self._settings, metadata={
+                    "input_columns": list(self._state.splits.X_train.columns),
+                    "target": self._state.target,
+                    "class_labels": self._state.extras.get("class_names", []),
+                    "random_state": self._state.config.random_state,
+                    "preprocessing": "Fitted preparation is included; pass raw dataframe columns."})
+            self._bus.artifact(str(artifact), "model")
         self._execute(reconciliation.tail())
 
     def _finalise(self) -> RunSummary:
         """Persist everything and return the summary."""
+        try:
+            self._checkpoint()
+        except Exception as exc:
+            self._state.add_warning(f"Checkpoint could not be saved: {type(exc).__name__}")
         self._persist(self._state.to_summary())
         # Written after the repository so the on-disk copy also carries any
         # warning that persistence itself produced.
@@ -765,6 +815,9 @@ class Orchestrator:
                     return self._skip(definition, f"human rejected the step: {exc}")
                 raise
             except Exception as exc:  # noqa: BLE001 - policy decides what happens
+                from ..core.errors import BudgetExceeded
+                if isinstance(exc, BudgetExceeded):
+                    raise
                 if self._retry_policy.should_retry(exc, attempt):
                     delay = self._retry_policy.delay_for(attempt)
                     state.upsert_step(definition.step_id, error=str(exc))
@@ -792,6 +845,7 @@ class Orchestrator:
                 step_id=definition.step_id,
                 duration_seconds=time.perf_counter() - started,
             )
+            self._checkpoint()
             return StepStatus.COMPLETED
 
     def _skip(self, definition: StepDefinition, reason: str) -> StepStatus:
@@ -834,6 +888,8 @@ class Orchestrator:
             return "hyperparameter tuning is disabled in the run config"
         if definition.step_id == "explain" and not config.enable_explainability:
             return "explainability is disabled in the run config"
+        if definition.step_id == "visualise" and not config.enable_visualizations:
+            return "visualizations are disabled in the run config"
         if definition.step_id == "report" and not config.report_formats:
             return "no report formats were requested in the run config"
         return None
@@ -841,6 +897,9 @@ class Orchestrator:
     def _check_cancelled(self) -> None:
         if self.cancel_event.is_set():
             raise RunCancelled(f"run {self._state.run_id} was cancelled by the caller")
+        if self._state.config.strict_deadline and self._state.time_remaining <= 0:
+            from ..core.errors import BudgetExceeded
+            raise BudgetExceeded("Run deadline reached; no additional stages will start.")
 
     def _discount_suspension(self) -> None:
         """Exclude human deliberation time from the wall-clock budget.
@@ -871,6 +930,8 @@ class Orchestrator:
                 "measured facts"
             )
             return
+        from ..core.privacy import prompt_profile
+        profile = prompt_profile(profile, self._settings.include_sample_values_in_prompts)
         digest = build_run_context(profile, self._state.config)
         self._state.freeze_context(digest)
         self._bus.log(f"run context frozen ({len(digest):,} characters)")
@@ -1228,6 +1289,8 @@ class Orchestrator:
             )
         try:
             agent = cls()
+            if hasattr(agent, "llm"):
+                agent.llm = self._llm
         except Exception as exc:  # noqa: BLE001 - usually a missing API credential
             raise ConfigurationError(
                 f"the '{name.value}' agent could not be created: {exc}"
@@ -1387,18 +1450,7 @@ class Orchestrator:
 
         self._request_cleaning_approval(plan, plan_step)
 
-        from ..execution.cleaning_ops import apply_cleaning_plan
-
-        frame = apply_cleaning_plan(state, plan)
-        if state.working_df is None:
-            state.working_df = frame if frame is not None else state.raw_df
-        rows = int(len(state.working_df)) if state.working_df is not None else 0
-        return (
-            f"applied {len(plan.decisions)} cleaning decision(s); "
-            f"{rows:,} rows x "
-            f"{len(state.working_df.columns) if state.working_df is not None else 0} "
-            "columns remain"
-        )
+        return f"validated {len(plan.decisions)} cleaning decisions; fitted independently inside each training fold"
 
     def _request_cleaning_approval(
         self, plan: CleaningPlan, plan_step: PlanStep | None
@@ -1469,15 +1521,11 @@ class Orchestrator:
 
         self._request_feature_approval(plan, plan_step)
 
-        from ..execution.feature_ops import apply_feature_plan
-
-        frame = apply_feature_plan(state, plan)
-        if state.feature_frame is None:
-            state.feature_frame = frame
-        columns = (
-            len(state.feature_frame.columns) if state.feature_frame is not None else 0
-        )
-        return f"applied {len(plan.decisions)} feature op(s); {columns} model columns"
+        from ..execution.preparation import HISTORY_OPS
+        for decision in plan.decisions:
+            if decision.op in HISTORY_OPS:
+                state.add_warning(f"{decision.op.value} needs explicit historical inputs and is excluded from the exportable pipeline.")
+        return f"validated {len(plan.decisions)} feature decisions; fitted independently inside each training fold"
 
     def _request_feature_approval(
         self, plan: FeaturePlan, plan_step: PlanStep | None
@@ -1508,10 +1556,9 @@ class Orchestrator:
         if state.working_df is None:
             state.working_df = state.raw_df
 
-        from ..execution.splitter import make_splits
-
-        splits = make_splits(state)
-        state.splits = splits
+        from ..execution.preparation import configure_preparation
+        configure_preparation(state)
+        splits = state.splits
         sizes = splits.sizes()
         if sizes["train"] == 0:
             raise ConfigurationError(

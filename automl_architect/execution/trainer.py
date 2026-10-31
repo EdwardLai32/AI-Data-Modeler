@@ -253,8 +253,6 @@ def _pick_eval_partition(state: RunState) -> tuple[Any, Any, str]:
     splits = state.splits
     if splits.has_validation:
         return splits.X_valid, splits.y_valid, "validation"
-    if splits.has_test:
-        return splits.X_test, splits.y_test, "test"
     return None, None, "none"
 
 
@@ -737,6 +735,9 @@ def run_experiments(state: RunState) -> ExperimentLog:
     Raises:
         NoViableModelError: When every candidate failed to train.
     """
+    if state.settings.isolate_training and state.extras.get("enforce_runtime") and not state.extras.get("computation_worker"):
+        from .runtime import run_computation
+        return run_computation(state, "train")
     ctx = build_training_context(state)
     candidates = _resolve_candidates(state, ctx)
     log = ExperimentLog(
@@ -804,6 +805,8 @@ def run_experiments(state: RunState) -> ExperimentLog:
     if best_fitted is not None:
         state.best_pipeline = best_fitted
         state.best_model = _final_estimator(best_fitted)
+        from .preparation import record_fitted_preparation
+        record_fitted_preparation(state)
 
     log.leaderboard_notes = format_leaderboard(log, ctx)
     best = log.best()

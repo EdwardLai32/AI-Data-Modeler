@@ -32,6 +32,7 @@ from urllib.parse import parse_qsl
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import __version__
 from ..config import Settings, get_settings
@@ -121,10 +122,6 @@ HTTP_413 = getattr(
 #: Modules Starlette will use for multipart parsing if either is installed.
 _MULTIPART_MODULES = ("python_multipart", "multipart")
 
-#: Cap on a body buffered in memory by the fallback multipart parser (256 MiB).
-#: Starlette's parser spools to disk and is not subject to this.
-MAX_INLINE_UPLOAD_BYTES = 256 * 1024 * 1024
-
 _MULTIPART_HINT = (
     "this form body could not be parsed. Install the optional 'python-multipart' "
     "package for full multipart support (pip install python-multipart), or POST "
@@ -200,7 +197,7 @@ async def health() -> HealthResponse:
         credentials = True
     elif not credentials:
         warnings.append(
-            "no ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN in the environment; "
+            "no ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN in the environment or dotenv files; "
             "agent steps will fail unless the SDK finds credentials elsewhere. "
             "Set AUTOML_OFFLINE=1 to run on the deterministic rule engine instead"
         )
@@ -278,15 +275,16 @@ async def upload_dataset(
             )
         name, payload = upload
     else:
-        payload = await request.body()
-        if not payload:
-            raise HTTPException(HTTP_422, "empty request body")
         if not filename:
             raise HTTPException(
                 HTTP_422,
                 "?filename= is required when uploading a raw body",
             )
         name = filename
+        payload = await _read_capped_body(request)
+
+    if not payload:
+        raise HTTPException(HTTP_422, "empty uploaded file")
 
     path = await asyncio.to_thread(store_upload, payload, name, settings=_settings())
     return UploadResponse(
@@ -328,7 +326,9 @@ async def _read_form(request: Request) -> tuple[dict[str, str], tuple[str, bytes
             return _parse_urlencoded(await _read_capped_body(request)), None
 
     try:
-        form = await request.form()
+        form = await request.form(max_files=1)
+    except StarletteHTTPException:
+        raise
     except Exception as exc:  # starlette asserts rather than raising ImportError
         logger.warning("form parsing unavailable: %s", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _MULTIPART_HINT) from exc
@@ -339,7 +339,15 @@ async def _read_form(request: Request) -> tuple[dict[str, str], tuple[str, bytes
         for key, value in form.multi_items():
             candidate_name = getattr(value, "filename", None)
             if candidate_name:
-                upload = (candidate_name, await value.read())  # type: ignore[union-attr]
+                cap = _settings().max_upload_bytes
+                if getattr(value, "size", 0) is not None and value.size > cap:
+                    raise _upload_too_large(cap)
+                payload = await value.read(cap + 1)
+                if len(payload) > cap:
+                    raise _upload_too_large(cap)
+                if not payload:
+                    raise HTTPException(HTTP_422, "empty uploaded file")
+                upload = (candidate_name, payload)
             else:
                 fields[key] = str(value)
     finally:
@@ -347,24 +355,38 @@ async def _read_form(request: Request) -> tuple[dict[str, str], tuple[str, bytes
     return fields, upload
 
 
-async def _read_capped_body(
-    request: Request, cap: int = MAX_INLINE_UPLOAD_BYTES
-) -> bytes:
+def _upload_too_large(cap: int) -> HTTPException:
+    return HTTPException(
+        HTTP_413,
+        f"upload exceeds the {cap:,}-byte limit; "
+        "write the file to the server and pass its path as 'uri' instead",
+    )
+
+
+async def _read_capped_body(request: Request, cap: int | None = None) -> bytes:
     """Buffer the request body, refusing anything over ``cap``.
 
     Streamed rather than ``await request.body()`` so an oversized upload is
     rejected as it arrives instead of after the whole thing is in memory.
     """
+    if cap is None:
+        cap = _settings().max_upload_bytes
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_size = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(HTTP_422, "invalid Content-Length header") from exc
+        if declared_size < 0:
+            raise HTTPException(HTTP_422, "invalid Content-Length header")
+        if declared_size > cap:
+            raise _upload_too_large(cap)
     chunks: list[bytes] = []
     total = 0
     async for chunk in request.stream():
         total += len(chunk)
         if total > cap:
-            raise HTTPException(
-                HTTP_413,
-                f"upload exceeds the {cap // (1024 * 1024)} MiB inline limit; "
-                "write the file to the server and pass its path as 'uri' instead",
-            )
+            raise _upload_too_large(cap)
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -381,7 +403,7 @@ def _parse_urlencoded(body: bytes) -> dict[str, str]:
         keep_blank_values=True,
         errors="replace",
     )
-    return {key: value for key, value in pairs}
+    return dict(pairs)
 
 
 def _multipart_boundary(content_type: str) -> bytes | None:
@@ -398,7 +420,7 @@ def _multipart_boundary(content_type: str) -> bytes | None:
 def _parse_multipart(
     body: bytes, boundary: bytes
 ) -> tuple[dict[str, str], tuple[str, bytes] | None]:
-    """Minimal RFC 7578 parser: scalar fields plus the last file part.
+    """Minimal RFC 7578 parser: scalar fields plus a single file part.
 
     Deliberately narrow — one file, no nested multipart, no transfer encodings —
     which is the whole shape this API accepts. Anything richer should install
@@ -422,6 +444,10 @@ def _parse_multipart(
         if name is None:
             continue
         if filename:
+            if upload is not None:
+                raise HTTPException(HTTP_422, "only one uploaded file is supported")
+            if not content:
+                raise HTTPException(HTTP_422, "empty uploaded file")
             upload = (filename, content)
         else:
             fields[name] = content.decode("utf-8", errors="replace")
@@ -489,8 +515,22 @@ async def start_run(request: Request) -> StartRunResponse:
         raise HTTPException(HTTP_422, str(exc)) from exc
 
     manager = get_manager()
+    from .connections import settings_for_connection
+    run_settings = settings_for_connection(request, payload.connection_id, payload.provider, payload.model)
+    effective = run_settings or getattr(manager, "settings", _settings())
+    if not effective.allow_remote_sources:
+        from urllib.parse import urlparse
+        uri = config.source.uri or ""
+        scheme = urlparse(uri).scheme.lower()
+        if len(scheme) > 1 or uri.startswith(("\\\\", "//")):
+            raise HTTPException(403, "Remote data sources are disabled. Upload a dataset or enable them in server settings.")
+    if run_settings is not None:
+        config = config.model_copy(update={"provider": effective.provider, "model": effective.model})
     try:
-        handle = await asyncio.to_thread(manager.start, config)
+        if run_settings is None:
+            handle = await asyncio.to_thread(manager.start, config)
+        else:
+            handle = await asyncio.to_thread(manager.start, config, settings=run_settings)
     except ValueError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
@@ -643,9 +683,8 @@ async def stream_run(
 
     manager = get_manager()
     repository = get_repository()
-    if manager.get(run_id) is None:
-        if await asyncio.to_thread(repository.get_run, run_id) is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"unknown run {run_id}")
+    if manager.get(run_id) is None and await asyncio.to_thread(repository.get_run, run_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"unknown run {run_id}")
 
     generator = _event_stream(request, run_id, cursor, manager, repository)
     return EventSourceResponse(generator, ping=15)
@@ -809,12 +848,16 @@ async def decide_approval(
 
 
 @router.post("/runs/{run_id}/ask", response_model=QuestionAnswer, tags=["insight"])
-async def ask_run(run_id: str, body: AskRequest) -> QuestionAnswer:
+async def ask_run(run_id: str, body: AskRequest, request: Request) -> QuestionAnswer:
     """Answer a natural-language question about a run, grounded in its record."""
     summary = await asyncio.to_thread(get_manager().summary, run_id)
     if summary is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"unknown run {run_id}")
     try:
+        from .connections import settings_for_connection
+        settings = settings_for_connection(request, body.connection_id, summary.config.provider, summary.config.model)
+        if settings is not None:
+            return await asyncio.to_thread(answer_question, summary, body.question, settings=settings)
         return await asyncio.to_thread(answer_question, summary, body.question)
     except HTTPException:
         raise
@@ -822,7 +865,7 @@ async def ask_run(run_id: str, body: AskRequest) -> QuestionAnswer:
         logger.exception("question answering failed for run %s", run_id)
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            f"could not answer the question: {type(exc).__name__}: {exc}",
+            f"Could not answer the question ({type(exc).__name__}). Check the AI connection.",
         ) from exc
 
 

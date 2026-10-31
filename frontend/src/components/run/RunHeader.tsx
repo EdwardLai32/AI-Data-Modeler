@@ -7,7 +7,7 @@ import { Badge, Chip } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Hero, StatTile } from "@/components/ui/Metrics";
 import { ErrorBanner, Spinner } from "@/components/ui/States";
-import { asApiError, cancelRun } from "@/lib/api";
+import { asApiError, cancelRun, recoverRun } from "@/lib/api";
 import {
   compactNumber,
   duration,
@@ -78,6 +78,8 @@ export function RunHeader({
         <span aria-hidden="true">/</span>
         <span className="font-mono text-ink-2">{summary.run_id}</span>
         <Chip>{summary.project}</Chip>
+        {summary.provider ? <Chip>{summary.provider} · {summary.model}</Chip> : null}
+        {summary.checkpoint ? <Chip>Checkpoint saved</Chip> : null}
         {summary.config.source.uri ? (
           <Chip mono title={summary.config.source.uri}>
             {summary.config.source.kind}
@@ -117,6 +119,12 @@ export function RunHeader({
             <Button size="sm" onClick={onRefresh} disabled={refreshing}>
               Refresh
             </Button>
+            {summary.checkpoint && summary.status !== "completed" ? <Button size="sm" disabled={cancelling} onClick={async () => {
+              setCancelling(true); setCancelError(null);
+              try { await recoverRun(summary.run_id); window.location.reload(); }
+              catch (error) { setCancelError(asApiError(error).detail); }
+              finally { setCancelling(false); }
+            }}>Resume checkpoint</Button> : null}
             {summary.report ? (
               <Link
                 href={`/runs/${summary.run_id}/report`}
@@ -140,7 +148,7 @@ export function RunHeader({
 
         <div className="mt-4 border-t border-hairline pt-4">
           <Hero
-            label={metric ? `Best ${metricLabel(metric)}` : "Best score"}
+            label={metric ? `Best validation ${metricLabel(metric)}` : "Best validation score"}
             value={metricValue(best?.primary_score ?? null)}
             note={
               best
@@ -151,6 +159,11 @@ export function RunHeader({
             }
           />
         </div>
+
+        {summary.final_test_metrics?.length ? <div className="mt-4 border-t border-hairline pt-3">
+          <p className="mb-2 text-xs font-medium text-ink-2">Final held-out test · scored after selection</p>
+          <div className="flex flex-wrap gap-2">{summary.final_test_metrics.map(item => <Chip key={item.name}>{metricLabel(item.name)}: {metricValue(item.value)}</Chip>)}</div>
+        </div> : null}
 
         <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
           <StatTile

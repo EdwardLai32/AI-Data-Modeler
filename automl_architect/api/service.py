@@ -105,6 +105,8 @@ class RunControl:
     run_id: str
     bus: EventBus
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    settings: Settings | None = field(default=None, repr=False)
+    recovering: bool = False
     state: RunState | None = field(default=None, repr=False)
     _approvals: dict[str, ApprovalRequest] = field(default_factory=dict, repr=False)
     _gates: dict[str, threading.Event] = field(default_factory=dict, repr=False)
@@ -420,13 +422,15 @@ def _drive_orchestrator(
     except (TypeError, ValueError):  # pragma: no cover
         parameters = {}
     if "settings" in parameters:
-        kwargs["settings"] = get_settings()
+        kwargs["settings"] = control.settings or get_settings()
     if "bus" in parameters:
         kwargs["bus"] = bus
     if "repository" in parameters:
         kwargs["repository"] = _executor_repository()
 
     orchestrator = orchestrator_class(config, **kwargs)
+    if control.recovering:
+        orchestrator.restore()
 
     state = getattr(orchestrator, "state", None)
     if isinstance(state, RunState):
@@ -500,6 +504,8 @@ def _invoke(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
     )
     kwargs: dict[str, Any] = {}
+    if "settings" in parameters and control.settings is not None:
+        kwargs["settings"] = control.settings
     args: list[Any] = []
 
     config_name = next((name for name in _CONFIG_NAMES if name in parameters), None)
@@ -649,7 +655,17 @@ class RunManager:
 
     # -- lifecycle ---------------------------------------------------------
 
-    def start(self, config: RunConfig) -> RunHandle:
+    def recover(self, run_id: str, *, settings: Settings | None = None) -> RunHandle:
+        stored = self.repository.get_run(run_id)
+        if stored is None or stored.status is RunStatus.COMPLETED:
+            raise ValueError("Only interrupted or failed runs can be recovered.")
+        if stored.provider not in {"", "offline"} and (settings or self.settings).offline:
+            raise ValueError("Reconnect the selected AI provider to recover this online run.")
+        if not (self.settings.run_dir(run_id) / "checkpoints" / "latest.json").exists():
+            raise ValueError("No recoverable checkpoint exists for this run.")
+        return self.start(stored.config, settings=settings, recovering=True)
+
+    def start(self, config: RunConfig, *, settings: Settings | None = None, recovering: bool = False) -> RunHandle:
         """Queue a run and return immediately.
 
         Args:
@@ -667,7 +683,10 @@ class RunManager:
                 raise ValueError(f"run {config.run_id} is already running")
 
             bus = EventBus(config.run_id)
-            control = RunControl(run_id=config.run_id, bus=bus)
+            if recovering:
+                bus.advance_sequence(self.repository.latest_sequence(config.run_id))
+            control = RunControl(run_id=config.run_id, bus=bus, settings=settings or self.settings,
+                                 recovering=recovering)
             handle = RunHandle(
                 run_id=config.run_id, config=config, bus=bus, control=control
             )
@@ -1365,14 +1384,19 @@ def answer_question(
         Exception: Propagates LLM failures (missing credentials, transport) so the
             caller can surface them; there is no useful offline answer.
     """
-    delegated = _delegate_question(summary, question)
+    effective = settings or get_settings()
+    effective = effective.model_copy(update={
+        "provider": summary.config.provider or effective.provider,
+        "model": summary.config.model or effective.model})
+    delegated = _delegate_question(summary, question) if effective.offline else None
     if delegated is not None:
         return delegated
 
     from ..core.llm import get_llm_client
 
-    client = get_llm_client(settings)
-    digest = render_run_digest(summary)
+    client = get_llm_client(effective)
+    from ..core.privacy import prompt_profile
+    digest = render_run_digest(summary.model_copy(update={"profile": prompt_profile(summary.profile)}))
     result = client.structured(
         output_model=QuestionAnswer,
         user=(

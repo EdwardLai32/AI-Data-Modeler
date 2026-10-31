@@ -1,0 +1,44 @@
+name: Harness checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AUTOML_WORKSPACE: ./workspace_ci
+      AUTOML_N_JOBS: "1"
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[api,reports,tuning,dev]"
+      - name: Unit and integration tests (no provider credentials)
+        run: python -m pytest -m "not live" --tb=short
+      - name: Repeatable offline evaluation
+        run: amla evaluate --provider offline --rows 300 --output workspace_ci/evaluations/offline.json
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

@@ -1215,6 +1215,8 @@ def _offline_env(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     workspace = tmp_path_factory.mktemp("automl_ws")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key-not-real")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key-not-real")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:9/v1")
     monkeypatch.setenv("AUTOML_WORKSPACE", str(workspace))
     monkeypatch.setenv("AUTOML_DATABASE_URL", f"sqlite+pysqlite:///{(workspace / 'test.db').as_posix()}")
     monkeypatch.delenv("AUTOML_MLFLOW_TRACKING_URI", raising=False)
@@ -1245,6 +1247,7 @@ def installed_fake_llm(fake_llm: FakeLLMClient, monkeypatch: pytest.MonkeyPatch)
     ``get_llm_client()`` pick this up without needing dependency injection.
     """
     monkeypatch.setattr(llm_module, "_shared", fake_llm, raising=False)
+    monkeypatch.setattr(llm_module, "get_llm_client", lambda settings=None: fake_llm)
     return fake_llm
 
 

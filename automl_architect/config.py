@@ -10,8 +10,9 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The model id is fixed rather than configurable-by-default on purpose: every
@@ -33,10 +34,37 @@ class Settings(BaseSettings):
         env_prefix="AUTOML_",
         extra="ignore",
         case_sensitive=False,
+        populate_by_name=True,
+    )
+
+    # Explicit aliases also load SDK settings from .env/.env.local. Pydantic
+    # does not export dotenv entries into os.environ for the SDK to discover.
+    anthropic_api_key: SecretStr | None = Field(
+        default=None, validation_alias="ANTHROPIC_API_KEY", exclude=True, repr=False
+    )
+    anthropic_auth_token: SecretStr | None = Field(
+        default=None, validation_alias="ANTHROPIC_AUTH_TOKEN", exclude=True, repr=False
+    )
+    anthropic_base_url: str | None = Field(
+        default=None, validation_alias="ANTHROPIC_BASE_URL", exclude=True, repr=False
     )
 
     # --- model -----------------------------------------------------------
-    model: str = Field(default=DEFAULT_MODEL, description="Claude model id.")
+    provider: Literal["anthropic", "openai"] = "anthropic"
+    openai_api_key: SecretStr | None = Field(
+        default=None, validation_alias="OPENAI_API_KEY", exclude=True, repr=False
+    )
+    openai_model: str = "gpt-4.1-mini"
+    # Prices are operator-supplied estimates, never silently borrowed from a
+    # different model. A dollar cap requires both rates to be configured.
+    input_price_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    output_price_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    api_token: SecretStr | None = Field(default=None, exclude=True, repr=False)
+    allow_remote_sources: bool = False
+    enable_checkpoints: bool = True
+    isolate_training: bool = True
+    include_sample_values_in_prompts: bool = False
+    model: str = Field(default=DEFAULT_MODEL, description="Selected provider's model ID.")
     default_effort: str = Field(
         default="high",
         description="Reasoning effort when an agent does not override it. "
@@ -56,7 +84,7 @@ class Settings(BaseSettings):
         ),
     )
     enable_refusal_fallback: bool = Field(
-        default=True,
+        default=False,
         description="Send fallbacks='default' so a policy decline is re-served "
         "by Anthropic's recommended fallback model instead of failing the run.",
     )
@@ -97,6 +125,12 @@ class Settings(BaseSettings):
     # --- api -------------------------------------------------------------
     api_host: str = "127.0.0.1"
     api_port: int = 8000
+    max_upload_bytes: int = Field(
+        default=256 * 1024 * 1024,
+        ge=1,
+        description="Maximum uploaded dataset size in bytes. The fallback form "
+        "parser also counts multipart encoding overhead against this limit.",
+    )
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     # --- observability ---------------------------------------------------
@@ -148,16 +182,26 @@ class Settings(BaseSettings):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def model_for_provider(self, provider: Literal["anthropic", "openai"] | None = None) -> str:
+        """Resolve a provider default while preserving its configured model."""
+        selected = provider or self.provider
+        if selected == "openai":
+            if self.provider == "openai" and self.model != DEFAULT_MODEL:
+                return self.model
+            return self.openai_model
+        return self.model if self.provider == "anthropic" else DEFAULT_MODEL
+
     def has_api_key(self) -> bool:
         """Whether *some* Anthropic credential is resolvable.
 
-        An unset ``ANTHROPIC_API_KEY`` does not mean there are no credentials —
-        the SDK also reads ``ANTHROPIC_AUTH_TOKEN`` and OAuth profiles written
-        by ``ant auth login``. Only the env vars are checkable cheaply here.
+        Credentials can come from the process environment or dotenv files.
+        SDK-managed credential sources are not checked here.
         """
+        if self.provider == "openai":
+            return bool(self.openai_api_key and self.openai_api_key.get_secret_value())
         return bool(
-            os.environ.get("ANTHROPIC_API_KEY")
-            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+            (self.anthropic_api_key and self.anthropic_api_key.get_secret_value())
+            or (self.anthropic_auth_token and self.anthropic_auth_token.get_secret_value())
         )
 
     def ensure_dirs(self) -> None:

@@ -932,6 +932,8 @@ export interface StepRecord {
 }
 
 export interface UsageTotals {
+  pricing_configured?: boolean;
+  cost_is_estimate?: boolean;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -941,6 +943,10 @@ export interface UsageTotals {
 }
 
 export interface RunSummary {
+  provider?: string;
+  model?: string;
+  checkpoint?: string | null;
+  final_test_metrics?: MetricValue[];
   run_id: string;
   project: string;
   status: RunStatus;
@@ -1188,6 +1194,12 @@ export interface ApprovalDecisionResponse {
  * `*_override` names `RunConfig` uses internally.
  */
 export interface StartRunBody {
+  provider?: "anthropic" | "openai";
+  model?: string;
+  connection_id?: string;
+  max_llm_calls?: number;
+  max_llm_tokens?: number;
+  max_cost_usd?: number | null;
   source?: DataSource;
   uri?: string;
   upload_path?: string;
@@ -1217,6 +1229,12 @@ export interface StartRunBody {
 
 /** Options accepted by `POST /api/runs`, mirroring the RunConfig knobs. */
 export interface NewRunOptions {
+  provider?: "anthropic" | "openai";
+  model?: string;
+  connection_id?: string;
+  max_llm_calls?: number;
+  max_llm_tokens?: number;
+  max_cost_usd?: number | null;
   project: string;
   target_column: string;
   time_budget_seconds: number;

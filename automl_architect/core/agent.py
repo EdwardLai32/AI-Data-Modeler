@@ -117,8 +117,10 @@ class BaseAgent(ABC, Generic[TOut]):
 
     def call(self, state: RunState) -> StructuredResult:
         """Invoke the model once, with events and accounting. No state writes."""
-        prompt = self.build_prompt(state)
-        system = self.system_blocks(state)
+        from .privacy import prompt_state
+        view = prompt_state(state)
+        prompt = self.build_prompt(view)
+        system = self.system_blocks(view)
         started = time.perf_counter()
 
         state.bus.emit(
@@ -136,12 +138,13 @@ class BaseAgent(ABC, Generic[TOut]):
         )
 
         usage = result.usage
-        state.usage.input_tokens += usage.input_tokens
-        state.usage.output_tokens += usage.output_tokens
-        state.usage.cache_read_tokens += usage.cache_read_tokens
-        state.usage.cache_write_tokens += usage.cache_write_tokens
-        state.usage.llm_calls += usage.calls
-        state.usage.cost_usd += usage.cost_usd
+        if not getattr(self.llm, "tracks_run_usage", False):
+            state.usage.input_tokens += usage.input_tokens
+            state.usage.output_tokens += usage.output_tokens
+            state.usage.cache_read_tokens += usage.cache_read_tokens
+            state.usage.cache_write_tokens += usage.cache_write_tokens
+            state.usage.llm_calls += usage.calls
+            state.usage.cost_usd += usage.cost_usd
 
         if result.thinking:
             state.bus.thinking(self.name, result.thinking)
@@ -155,6 +158,8 @@ class BaseAgent(ABC, Generic[TOut]):
             tokens_out=usage.output_tokens,
             cache_read_tokens=usage.cache_read_tokens,
             cost_usd=usage.cost_usd,
+            payload={"provider": state.settings.provider, "model": result.model,
+                     "attempts": result.attempts},
         )
         if result.fallback_used:
             state.add_warning(
@@ -199,6 +204,9 @@ class BaseAgent(ABC, Generic[TOut]):
         except AgentError:
             raise
         except Exception as exc:  # noqa: BLE001 - re-raised with agent context
+            from .errors import BudgetExceeded, RunCancelled
+            if isinstance(exc, (BudgetExceeded, RunCancelled)):
+                raise
             raise AgentError(self.name.value, str(exc)) from exc
 
         value = self.postprocess(value, state)

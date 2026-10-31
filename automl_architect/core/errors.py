@@ -154,6 +154,10 @@ class RunCancelled(AutoMLArchitectError):
     """The run was cancelled by a caller."""
 
 
+class BudgetExceeded(FatalError):
+    """An execution or LLM limit prevents more work."""
+
+
 class TrainingError(ExecutionError):
     """Model fitting failed."""
 

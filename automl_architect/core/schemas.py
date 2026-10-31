@@ -22,7 +22,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 def _utcnow() -> datetime:
@@ -1113,7 +1113,7 @@ class ApprovalRequest(Base):
 class RunConfig(Base):
     """Everything that shapes a run, in one auditable object."""
 
-    run_id: str = Field(default_factory=lambda: _new_id("run"))
+    run_id: str = Field(default_factory=lambda: _new_id("run"), pattern=r"^[A-Za-z0-9_-]{1,100}$")
     project: str = "default"
     source: DataSource
     target_column: str | None = None
@@ -1134,6 +1134,7 @@ class RunConfig(Base):
     )
     enable_tuning: bool = True
     enable_explainability: bool = True
+    enable_visualizations: bool = True
     enable_self_improvement: bool = True
     max_replans: int = 2
     min_acceptable_score: float | None = None
@@ -1142,7 +1143,18 @@ class RunConfig(Base):
     )
     fairness_attributes: list[str] = Field(default_factory=list)
     notes: str = ""
+    provider: Literal["anthropic", "openai"] | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=128)
+    max_llm_calls: int = Field(default=40, ge=1, le=500)
+    max_llm_tokens: int = Field(default=500_000, ge=1)
+    max_cost_usd: float | None = Field(default=None, gt=0)
+    strict_deadline: bool = True
     created_at: datetime = Field(default_factory=_utcnow)
+
+    @field_serializer("source")
+    def serialize_source(self, value):
+        from ..ingestion.base import redact_source
+        return redact_source(value).model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -1209,6 +1221,8 @@ class UsageTotals(Base):
     cache_write_tokens: int = 0
     llm_calls: int = 0
     cost_usd: float = 0.0
+    cost_is_estimate: bool = True
+    pricing_configured: bool = False
 
 
 class RunSummary(Base):
@@ -1249,6 +1263,10 @@ class RunSummary(Base):
     replans: int = 0
     warnings: list[str] = Field(default_factory=list)
     artifact_dir: str | None = None
+    provider: str = ""
+    model: str = ""
+    checkpoint: str | None = None
+    final_test_metrics: list[MetricValue] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

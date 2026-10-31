@@ -21,6 +21,7 @@ classifiers = [
 
 dependencies = [
   "anthropic>=0.116",
+  "openai>=2.54,<3",
   "pandas>=2.1",
   "numpy>=1.26",
   "scipy>=1.11",
@@ -46,7 +47,7 @@ tuning = ["optuna>=3.6"]
 explain = ["shap>=0.45"]
 charts = ["kaleido>=0.2.1"]
 reports = ["reportlab>=4.1", "python-pptx>=0.6.23", "markdown>=3.6"]
-api = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "sse-starlette>=2.1", "httpx>=0.27"]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "sse-starlette>=2.1", "httpx>=0.27", "python-multipart>=0.0.18"]
 sql = ["psycopg[binary]>=3.1", "PyMySQL>=1.1"]
 snowflake = ["snowflake-sqlalchemy>=1.5"]
 databricks = ["databricks-sql-connector>=3.1"]

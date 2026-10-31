@@ -32,7 +32,7 @@ import type {
 
 /** Backend origin. Overridable at build time via `NEXT_PUBLIC_API_URL`. */
 export const API_BASE: string = (
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 ).replace(/\/+$/, "");
 
 /** The command that starts the backend, quoted in every unreachable-state UI. */
@@ -118,6 +118,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   let response: Response;
   try {
     response = await fetch(url, {
+      credentials: "include",
       method: options.method ?? "GET",
       body: options.body ?? null,
       headers: options.headers,
@@ -234,7 +235,7 @@ export function askRun(runId: string, question: string): Promise<QuestionAnswer>
   return request<QuestionAnswer>(`/api/runs/${encodeURIComponent(runId)}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, connection_id: activeConnection?.connection_id }),
   });
 }
 
@@ -320,7 +321,7 @@ export async function getArtifactText(
   const url = artifactUrl(runId, serverPath);
   let response: Response;
   try {
-    response = await fetch(url, { cache: "no-store", mode: "cors", signal });
+    response = await fetch(url, { cache: "no-store", mode: "cors", credentials: "include", signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError({
@@ -379,6 +380,12 @@ export function inferSourceKind(name: string): SourceKind {
  */
 function optionsToBody(options: NewRunOptions): StartRunBody {
   const body: StartRunBody = {
+    provider: options.provider,
+    model: options.model,
+    connection_id: options.connection_id,
+    max_llm_calls: options.max_llm_calls,
+    max_llm_tokens: options.max_llm_tokens,
+    max_cost_usd: options.max_cost_usd,
     project: options.project.trim() || "default",
     time_budget_seconds: options.time_budget_seconds,
     max_experiments: options.max_experiments,
@@ -475,6 +482,12 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunRespons
 /** Defaults for the "New analysis" panel, matching `RunConfig`'s own defaults. */
 export function defaultRunOptions(): NewRunOptions {
   return {
+    connection_id: activeConnection?.connection_id,
+    provider: activeConnection?.provider,
+    model: activeConnection?.model,
+    max_llm_calls: 40,
+    max_llm_tokens: 500000,
+    max_cost_usd: null,
     project: "default",
     target_column: "",
     time_budget_seconds: 900,
@@ -493,4 +506,52 @@ export function defaultRunOptions(): NewRunOptions {
     report_formats: ["markdown", "html", "json"],
     notes: "",
   };
+}
+
+export interface AIConnection {
+  connection_id: string;
+  provider: "anthropic" | "openai";
+  model: string;
+  tested: boolean;
+  expires_in_seconds: number;
+}
+
+let activeConnection: AIConnection | null = null;
+export function currentConnection() { return activeConnection; }
+
+export interface AIProvider {
+  id: AIConnection["provider"];
+  default_model: string;
+  models: {id: string; label: string}[];
+}
+
+export function getProviders(): Promise<{providers: AIProvider[]; offline: boolean}> {
+  return request("/api/providers");
+}
+
+export async function connectAI(body: {
+  provider: "anthropic" | "openai"; model: string; api_key: string;
+  input_price_per_million?: number; output_price_per_million?: number;
+}): Promise<AIConnection> {
+  const connection = await request<AIConnection>("/api/connections", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({...body, test: true}),
+  });
+  activeConnection = connection;
+  return connection;
+}
+
+export async function disconnectAI(): Promise<void> {
+  if (activeConnection) await request(`/api/connections/${encodeURIComponent(activeConnection.connection_id)}`, {method: "DELETE"});
+  activeConnection = null;
+}
+
+export function recoverRun(runId: string): Promise<{run_id: string; status: string}> {
+  return request(`/api/runs/${encodeURIComponent(runId)}/recover`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({connection_id: activeConnection?.connection_id}),
+  });
+}
+
+export function signInServer(token: string): Promise<{authenticated: boolean}> {
+  return request("/api/session", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({token})});
 }

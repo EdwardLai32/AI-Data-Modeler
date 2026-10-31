@@ -345,6 +345,23 @@ def apply_feature_plan(state: RunState, plan: FeaturePlan) -> Any:
         columns = _resolve_columns(ctx, decision)
         params = params_to_dict(decision.parameters)
         try:
+            frozen = state.extras.get("frozen_feature_encodings")
+            encoding_kind = {FeatureOp.TARGET_ENCODE: "target_encode",
+                             FeatureOp.FREQUENCY_ENCODE: "frequency_encode",
+                             FeatureOp.AGGREGATE_BY_GROUP: "group_aggregate"}.get(decision.op)
+            if frozen is not None and encoding_kind is not None:
+                for column, saved in frozen.get(encoding_kind, {}).items():
+                    source = saved.get("group_column", column)
+                    if encoding_kind != "group_aggregate" and column not in columns:
+                        continue
+                    if source not in ctx.frame:
+                        continue
+                    values = _category_key(ctx.frame[source]).map(saved["mapping"]).astype("float64")
+                    values = values.fillna(saved.get("prior", 0.0))
+                    ctx.add(saved["output"], values, spec=_spec("numeric"))
+                    if encoding_kind != "group_aggregate":
+                        ctx.consume(column, "replayed training-fitted encoding")
+                continue
             handler(ctx, decision, columns, params)
         except Exception as exc:  # noqa: BLE001 - one op must not abort the run
             logger.exception("feature op %s failed", decision.op)
@@ -597,6 +614,8 @@ def _op_date_decompose(
             else ["year", "month", "day", "dayofweek", "quarter", "weekofyear", "is_weekend"]
             + (["hour"] if sub_daily else [])
         )
+        parts = ctx.state.extras.get("frozen_feature_encodings", {}).get("calendar", {}).get(column, parts)
+        ctx.encodings.setdefault("calendar", {})[column] = parts
         made: list[str] = []
         for part in parts:
             values = _calendar_part(dt, part)
@@ -664,6 +683,11 @@ def _op_cyclical_encode(
             ctx.skip(FeatureOp.CYCLICAL_ENCODE, f"cannot extract '{part}' from '{column}'")
             continue
         angle = 2.0 * math.pi * values.astype("float64") / max(period, 1e-9)
+        frozen_period = ctx.state.extras.get("frozen_feature_encodings", {}).get("cycles", {}).get(label)
+        if frozen_period is not None:
+            period = frozen_period
+            angle = 2.0 * math.pi * values.astype("float64") / max(period, 1e-9)
+        ctx.encodings.setdefault("cycles", {})[label] = period
         sin_name = ctx.unique_name(f"{label}_sin")
         cos_name = ctx.unique_name(f"{label}_cos")
         ctx.add(sin_name, np.sin(angle), spec=_spec("numeric"))
@@ -834,7 +858,10 @@ def _op_interaction(
         combined = key if combined is None else combined.str.cat(key, sep="|")
     name = ctx.unique_name(decision.output_name_hint or "_x_".join(columns))
     levels = int(pd.Series(combined).nunique())
-    if levels > MAX_ONEHOT_CARDINALITY:
+    accepted = levels <= MAX_ONEHOT_CARDINALITY
+    accepted = ctx.state.extras.get("frozen_feature_encodings", {}).get("interactions", {}).get(name, accepted)
+    ctx.encodings.setdefault("interactions", {})[name] = accepted
+    if not accepted:
         ctx.skip(
             FeatureOp.INTERACTION,
             f"crossing {columns} produces {levels} levels, above the "
@@ -1298,6 +1325,7 @@ def _op_aggregate_by_group(
                 continue
             ctx.encodings.setdefault("group_aggregate", {})[f"{by}|{column}|{stat}"] = {
                 "output": name,
+                "group_column": by,
                 "mapping": {str(k): _finite(v) for k, v in mapping.items()},
             }
         ctx.record(
@@ -1436,6 +1464,9 @@ def _op_geo_distance(
         lat1, lon1 = (_numeric_view(ctx, c) for c in pairs)
         ref_lat = params.get("ref_lat")
         ref_lon = params.get("ref_lon")
+        saved = ctx.state.extras.get("frozen_feature_encodings", {}).get("geo", {}).get("|".join(pairs))
+        if saved:
+            ref_lat, ref_lon = saved
         fit_index = _fit_index(ctx)
         if not isinstance(ref_lat, (int, float)):
             ref_lat = float(lat1.loc[fit_index].mean())  # type: ignore[union-attr]
@@ -1444,6 +1475,7 @@ def _op_geo_distance(
         else:
             ref_lon = float(ref_lon) if isinstance(ref_lon, (int, float)) else 0.0
             reference = f"the reference point ({float(ref_lat):.4f}, {ref_lon:.4f})"
+        ctx.encodings.setdefault("geo", {})["|".join(pairs)] = [ref_lat, ref_lon]
         lat2 = pd.Series(float(ref_lat), index=ctx.frame.index)
         lon2 = pd.Series(float(ref_lon), index=ctx.frame.index)
         label = f"{pairs[0]}_{pairs[1]}_distance_km"

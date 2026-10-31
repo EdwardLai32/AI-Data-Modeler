@@ -41,19 +41,19 @@ export function UsageMeter({
   const budget = summary.config.time_budget_seconds;
   const budgetFraction = budget > 0 ? elapsed / budget : null;
 
-  const promptTokens = usage.input_tokens + usage.cache_read_tokens;
+  const promptTokens = usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens;
   const cacheFraction = promptTokens > 0 ? usage.cache_read_tokens / promptTokens : null;
 
   return (
     <Panel
       title="Tokens & cost"
-      subtitle="Measured from the Anthropic API responses, at list prices"
+      subtitle="Provider-reported tokens; cost estimates use configured model prices"
       bodyClassName="space-y-4"
     >
       <div className="grid grid-cols-2 gap-2.5">
         <StatTile
-          label="Run cost"
-          value={usd(usage.cost_usd)}
+          label="Estimated run cost"
+          value={usage.pricing_configured ? usd(usage.cost_usd) : "Prices not configured"}
           note={`${integer(usage.llm_calls)} LLM call${usage.llm_calls === 1 ? "" : "s"}`}
         />
         <StatTile
@@ -69,7 +69,7 @@ export function UsageMeter({
         <StatTile
           label="Cache writes"
           value={compactNumber(usage.cache_write_tokens)}
-          note="Charged at 1.25× input"
+          note="Provider-specific cache billing"
         />
       </div>
 
@@ -80,7 +80,7 @@ export function UsageMeter({
         tone={budgetFraction === null ? "accent" : budgetTone(budgetFraction)}
         hint={
           budgetFraction !== null && budgetFraction >= 1
-            ? "Over budget — the orchestrator drops optional steps rather than stopping mid-run."
+            ? "Deadline reached. No new stages start; active training is stopped."
             : undefined
         }
       />
@@ -92,7 +92,7 @@ export function UsageMeter({
         hint={
           cacheFraction === null
             ? "Appears once the first agent call returns."
-            : "Cached reads bill at 0.1× the input rate."
+            : "Cache billing depends on your provider and selected model."
         }
       />
     </Panel>
